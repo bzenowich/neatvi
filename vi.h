@@ -230,3 +230,15 @@ extern int xhist;
 int tag_init(void);
 int tag_find(char *name, int *pos, int dir, char *path, int pathlen, char *cmd, int cmdlen);
 void tag_done(void);
+
+/* server/client support */
+int server_init(char *name);
+int server_check(char *name);
+void server_list(void);
+int server_send(char *name, char *cmd);
+int server_accept(void);
+char *server_read(void);
+void server_respond(char *msg);
+void server_cleanup(void);
+int server_isactive(void);
+char *server_getname(void);

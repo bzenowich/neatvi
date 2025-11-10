@@ -1486,6 +1486,20 @@ static void vi(void)
 		int orow = xrow;
 		char *opath = ex_path();	/* do not dereference; to detect buffer changes */
 		int mv, n, ru;
+		/* check for incoming server requests */
+		if (server_isactive() && server_accept()) {
+			char *cmd = server_read();
+			if (cmd) {
+				int ret = ex_command(cmd);
+				if (ret == 0) {
+					server_respond(NULL);
+					mod = VC_ALL;
+				} else {
+					server_respond("ERROR: command failed\n");
+				}
+				free(cmd);
+			}
+		}
 		term_cmd(&n);
 		vi_arg2 = 0;
 		vi_ybuf = vi_yankbuf();
@@ -1850,26 +1864,62 @@ int main(int argc, char *argv[])
 {
 	int i;
 	char *prog = strchr(argv[0], '/') ? strrchr(argv[0], '/') + 1 : argv[0];
+	char *servername = NULL;
+	char *remote_cmd = NULL;
+	int remote_tab = 0;
 	xvis = strcmp("ex", prog) && strcmp("neatex", prog);
 	for (i = 1; i < argc && argv[i][0] == '-'; i++) {
-		if (argv[i][1] == 's')
+		if (argv[i][1] == 's' && argv[i][2] == '\0')
 			xled = 0;
-		if (argv[i][1] == 'e')
+		else if (argv[i][1] == 'e' && argv[i][2] == '\0')
 			xvis = 0;
-		if (argv[i][1] == 'v')
+		else if (argv[i][1] == 'v' && argv[i][2] == '\0')
 			xvis = 1;
-		if (argv[i][1] == 'h') {
-			printf("usage: %s [options] [file...]\n\n", argv[0]);
-			printf("options:\n");
-			printf("  -v    start in vi mode\n");
-			printf("  -e    start in ex mode\n");
-			printf("  -s    silent mode (for ex mode only)\n");
+		else if (!strcmp(argv[i], "--servername") && i + 1 < argc)
+			servername = argv[++i];
+		else if (!strcmp(argv[i], "--remote") && i + 1 < argc) {
+			remote_cmd = argv[++i];
+			remote_tab = 0;
+		}
+		else if (!strcmp(argv[i], "--remote-tab") && i + 1 < argc) {
+			remote_cmd = argv[++i];
+			remote_tab = 1;
+		}
+		else if (!strcmp(argv[i], "--serverlist")) {
+			server_list();
 			return 0;
 		}
+		else if (argv[i][1] == 'h' && argv[i][2] == '\0') {
+			printf("usage: %s [options] [file...]\n\n", argv[0]);
+			printf("options:\n");
+			printf("  -v                 start in vi mode\n");
+			printf("  -e                 start in ex mode\n");
+			printf("  -s                 silent mode (for ex mode only)\n");
+			printf("  --servername NAME  start or connect to named server\n");
+			printf("  --remote FILE      open file in existing server\n");
+			printf("  --remote-tab FILE  open file in new tab in existing server\n");
+			printf("  --serverlist       list running servers\n");
+			return 0;
+		}
+	}
+	/* handle client mode: send command to existing server */
+	if (remote_cmd) {
+		char cmd[EXLEN];
+		char *name = servername ? servername : "NEATVI";
+		if (remote_tab)
+			snprintf(cmd, sizeof(cmd), ":e %s", remote_cmd);
+		else
+			snprintf(cmd, sizeof(cmd), ":e %s", remote_cmd);
+		return server_send(name, cmd);
 	}
 	dir_init();
 	syn_init();
 	tag_init();
+	/* initialize server if servername specified */
+	if (servername) {
+		if (server_init(servername) < 0)
+			return 1;
+	}
 	if (!ex_init(argv + i)) {
 		if (xled || xvis)
 			term_init();
@@ -1886,5 +1936,6 @@ int main(int argc, char *argv[])
 	syn_done();
 	dir_done();
 	tag_done();
+	server_cleanup();
 	return 0;
 }
