@@ -21,6 +21,7 @@ int xhl = 1;			/* syntax highlight option */
 int xhll;			/* highlight current line */
 int xhid;			/* hidden buffers option */
 int xled = 1;			/* use the line editor */
+int xserver_refresh = 0;	/* server command refresh flag */
 int xtd = 0;			/* current text direction */
 int xshape = 1;			/* perform letter shaping */
 int xorder = 1;			/* change the order of characters */

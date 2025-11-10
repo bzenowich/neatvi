@@ -8,6 +8,13 @@
 #include <unistd.h>
 #include "vi.h"
 
+static volatile sig_atomic_t term_interrupted = 0;
+
+static void term_sighandler(int sig)
+{
+	term_interrupted = 1;
+}
+
 static struct sbuf *term_sbuf;	/* output buffer if not NULL */
 static int rows, cols;		/* number of terminal rows and columns */
 static int win_beg, win_rows;	/* active window rows */
@@ -17,6 +24,8 @@ void term_init(void)
 {
 	struct winsize win;
 	struct termios newtermios;
+	struct sigaction sa;
+
 	tcgetattr(0, &termios);
 	newtermios = termios;
 	newtermios.c_lflag &= ~(ICANON | ISIG);
@@ -34,6 +43,12 @@ void term_init(void)
 	rows = rows ? rows : 25;
 	term_str("\33[m");
 	term_window(win_beg, win_rows > 0 ? win_rows : rows);
+
+	/* Set up signal handler for server refresh interrupts */
+	sa.sa_handler = term_sighandler;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0;  /* No SA_RESTART - we want to interrupt poll() */
+	sigaction(SIGUSR1, &sa, NULL);
 }
 
 void term_window(int row, int cnt)
@@ -173,6 +188,12 @@ int term_read(void)
 	static int stdin_eof = 0;  /* track if stdin hit EOF */
 
 	if (ibuf_pos >= ibuf_cnt) {
+		/* check if we were interrupted by signal before blocking */
+		if (term_interrupted) {
+			term_interrupted = 0;
+			return 0;
+		}
+
 		nfds = 0;
 
 		/* poll stdin only if it hasn't hit EOF */
@@ -195,17 +216,30 @@ int term_read(void)
 			return -1;
 
 		/* wait for either stdin or server socket */
-		if (poll(ufds, nfds, -1) <= 0)
+		if (poll(ufds, nfds, -1) <= 0) {
+			/* if interrupted by signal (server refresh), return to vi loop */
+			if (term_interrupted) {
+				term_interrupted = 0;
+				return 0;
+			}
 			return -1;
+		}
+
+		/* also check after poll returns */
+		if (term_interrupted) {
+			term_interrupted = 0;
+			return 0;
+		}
 
 		/* handle server requests if server socket is ready */
 		if (server_fd >= 0) {
 			int server_idx = stdin_eof ? 0 : 1;
 			if (ufds[server_idx].revents & POLLIN) {
 				server_handle();
-				/* if stdin not ready, loop to wait again */
+				/* return immediately to allow vi loop to refresh screen */
+				/* returning 0 will cause vi loop to continue and check xserver_refresh */
 				if (stdin_eof || !(ufds[0].revents & POLLIN))
-					return term_read();
+					return 0;
 			}
 		}
 
@@ -216,7 +250,7 @@ int term_read(void)
 				stdin_eof = 1;  /* stdin closed/EOF */
 				/* if server active, keep running; otherwise exit */
 				if (server_fd >= 0)
-					return term_read();
+					return 0;  /* return to vi loop, will poll again */
 				return -1;
 			}
 			ibuf_cnt = n;

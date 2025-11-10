@@ -1510,9 +1510,17 @@ static void vi(void)
 			char *cmd;
 			int c = vi_read();
 			int k = 0;
-			if (c <= 0)
-				continue;
-			lbuf_mark(xb, '^', xrow, xoff);
+			if (c <= 0) {
+				/* check for server refresh before continuing */
+				if (xserver_refresh) {
+					xserver_refresh = 0;
+					mod = VC_ALL;
+					/* skip command processing, go straight to drawing */
+				} else {
+					continue;
+				}
+			} else {
+				lbuf_mark(xb, '^', xrow, xoff);
 			switch (c) {
 			case TK_CTL('b'):
 				if (vi_scrollbackward(MAX(1, vi_arg1) * (xrows - 1)))
@@ -1793,9 +1801,15 @@ static void vi(void)
 					reg_put('.', rep_cmd, 0);
 				}
 			}
+		}  /* end of else block for command processing */
 		}
 		if (mod & VC_OK)
 			otop = xtop;
+		/* check if server command requires screen refresh */
+		if (xserver_refresh) {
+			xserver_refresh = 0;
+			mod = VC_ALL;
+		}
 		vi_wfix();
 		if (mod)
 			xcol = vi_off2col(xb, xrow, xoff);

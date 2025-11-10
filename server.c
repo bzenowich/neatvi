@@ -5,6 +5,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -348,13 +349,17 @@ void server_handle(void)
 
 	char *cmd = server_read();
 	if (cmd) {
-		/* execute the command - vi.c will need to handle the actual execution */
-		/* for now, we'll store it in a buffer that can be retrieved */
+		/* execute the command */
 		int ret = ex_command(cmd);
-		if (ret == 0)
+		if (ret == 0) {
 			server_respond(NULL);
-		else
+			/* signal vi to refresh the screen after server command */
+			xserver_refresh = 1;
+			/* interrupt any blocking read to force immediate refresh */
+			kill(getpid(), SIGUSR1);
+		} else {
 			server_respond("ERROR: command failed\n");
+		}
 		free(cmd);
 	}
 }

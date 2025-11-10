@@ -221,6 +221,7 @@ extern int xorder;
 extern int xhl;
 extern int xhll;
 extern int xhid;
+extern int xserver_refresh;
 extern int xkmap;
 extern int xkmap_alt;
 extern int xlim;
