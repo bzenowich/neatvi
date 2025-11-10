@@ -220,6 +220,7 @@ extern int xshape;
 extern int xorder;
 extern int xhl;
 extern int xhll;
+extern int xhid;
 extern int xkmap;
 extern int xkmap_alt;
 extern int xlim;

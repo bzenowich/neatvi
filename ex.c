@@ -19,6 +19,7 @@ int xaw;			/* autowrite option */
 int xwa;			/* writeany option */
 int xhl = 1;			/* syntax highlight option */
 int xhll;			/* highlight current line */
+int xhid;			/* hidden buffers option */
 int xled = 1;			/* use the line editor */
 int xtd = 0;			/* current text direction */
 int xshape = 1;			/* perform letter shaping */
@@ -376,6 +377,8 @@ static int bufs_modified(int idx, char *msg)
 {
 	struct buf *b = &bufs[idx];
 	if (!b->lb || !lbuf_modified(b->lb))
+		return 0;
+	if (xhid)
 		return 0;
 	if (xaw && b->path[0])
 		return lbuf_save(b->lb, 0, -1, b->path, 0, b->mtime) != NULL;
@@ -1120,6 +1123,7 @@ static struct option {
 } options[] = {
 	{"ai", "autoindent", &xai},
 	{"aw", "autowrite", &xaw},
+	{"hid", "hidden", &xhid},
 	{"hist", "history", &xhist},
 	{"hl", "highlight", &xhl},
 	{"hll", "highlightline", &xhll},
