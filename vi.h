@@ -242,3 +242,5 @@ void server_respond(char *msg);
 void server_cleanup(void);
 int server_isactive(void);
 char *server_getname(void);
+int server_getfd(void);
+void server_handle(void);

@@ -333,3 +333,28 @@ char *server_getname(void)
 {
 	return server_name[0] ? server_name : NULL;
 }
+
+/* get server file descriptor for polling */
+int server_getfd(void)
+{
+	return server_fd;
+}
+
+/* handle incoming server request (called when server_fd is ready) */
+void server_handle(void)
+{
+	if (!server_accept())
+		return;
+
+	char *cmd = server_read();
+	if (cmd) {
+		/* execute the command - vi.c will need to handle the actual execution */
+		/* for now, we'll store it in a buffer that can be retrieved */
+		int ret = ex_command(cmd);
+		if (ret == 0)
+			server_respond(NULL);
+		else
+			server_respond("ERROR: command failed\n");
+		free(cmd);
+	}
+}

@@ -167,18 +167,61 @@ char *term_cmd(int *n)
 
 int term_read(void)
 {
-	struct pollfd ufds[1];
-	int n, c;
+	struct pollfd ufds[2];
+	int nfds, n, c;
+	int server_fd;
+	static int stdin_eof = 0;  /* track if stdin hit EOF */
+
 	if (ibuf_pos >= ibuf_cnt) {
-		ufds[0].fd = 0;
-		ufds[0].events = POLLIN;
-		if (poll(ufds, 1, -1) <= 0)
+		nfds = 0;
+
+		/* poll stdin only if it hasn't hit EOF */
+		if (!stdin_eof) {
+			ufds[nfds].fd = 0;
+			ufds[nfds].events = POLLIN;
+			nfds++;
+		}
+
+		/* also poll server socket if active */
+		server_fd = server_getfd();
+		if (server_fd >= 0) {
+			ufds[nfds].fd = server_fd;
+			ufds[nfds].events = POLLIN;
+			nfds++;
+		}
+
+		/* if no fds to poll, stdin is at EOF and no server active */
+		if (nfds == 0)
 			return -1;
-		/* read a single input character */
-		if ((n = read(0, ibuf, 1)) <= 0)
+
+		/* wait for either stdin or server socket */
+		if (poll(ufds, nfds, -1) <= 0)
 			return -1;
-		ibuf_cnt = n;
-		ibuf_pos = 0;
+
+		/* handle server requests if server socket is ready */
+		if (server_fd >= 0) {
+			int server_idx = stdin_eof ? 0 : 1;
+			if (ufds[server_idx].revents & POLLIN) {
+				server_handle();
+				/* if stdin not ready, loop to wait again */
+				if (stdin_eof || !(ufds[0].revents & POLLIN))
+					return term_read();
+			}
+		}
+
+		/* read a single input character from stdin */
+		if (!stdin_eof) {
+			n = read(0, ibuf, 1);
+			if (n <= 0) {
+				stdin_eof = 1;  /* stdin closed/EOF */
+				/* if server active, keep running; otherwise exit */
+				if (server_fd >= 0)
+					return term_read();
+				return -1;
+			}
+			ibuf_cnt = n;
+			ibuf_pos = 0;
+		}
 	}
 	c = ibuf_pos < ibuf_cnt ? (unsigned char) ibuf[ibuf_pos++] : -1;
 	if (icmd_pos < sizeof(icmd))

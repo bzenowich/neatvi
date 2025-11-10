@@ -1486,20 +1486,6 @@ static void vi(void)
 		int orow = xrow;
 		char *opath = ex_path();	/* do not dereference; to detect buffer changes */
 		int mv, n, ru;
-		/* check for incoming server requests */
-		if (server_isactive() && server_accept()) {
-			char *cmd = server_read();
-			if (cmd) {
-				int ret = ex_command(cmd);
-				if (ret == 0) {
-					server_respond(NULL);
-					mod = VC_ALL;
-				} else {
-					server_respond("ERROR: command failed\n");
-				}
-				free(cmd);
-			}
-		}
 		term_cmd(&n);
 		vi_arg2 = 0;
 		vi_ybuf = vi_yankbuf();
