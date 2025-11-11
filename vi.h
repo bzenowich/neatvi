@@ -150,6 +150,7 @@ int ex_command(char *cmd);
 char *ex_read(char *msg);
 void ex_print(char *line);
 void ex_show(char *msg);
+void vi_status(void);
 int ex_init(char **files);
 void ex_done(void);
 char *ex_path(void);
@@ -206,6 +207,7 @@ char *conf_section(char *ft);
 char *conf_ecmd(void);
 
 /* global variables */
+extern char vi_msg[];
 extern int xrow;
 extern int xoff;
 extern int xtop;

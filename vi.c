@@ -23,6 +23,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include "vi.h"
+#include "git.h"
 
 /* parts of the screen to update; returned from vc_* functions */
 #define VC_COL	1	/* only obtain cursor column from xoff */
@@ -32,7 +33,7 @@
 #define VC_OK	16	/* already updated */
 #define VC_ALL	12	/* all windows were updated */
 
-static char vi_msg[EXLEN];	/* current message */
+char vi_msg[EXLEN];	/* current message */
 static char vi_charlast[8];	/* the last character searched via f, t, F, or T */
 static int vi_charcmd;		/* the character finding command */
 static int vi_arg1, vi_arg2;	/* the first and second arguments */
@@ -47,6 +48,7 @@ static int w_cur;		/* active window identifier */
 static int w_tmp;		/* temporary window */
 static char *w_path;		/* saved window path */
 static int w_row, w_off, w_top, w_left;	/* saved window configuration */
+static struct git_info git_cache;	/* cached git info for current file */
 
 static int vc_status(void);
 
@@ -1225,15 +1227,78 @@ static int vi_scrollbackward(int cnt)
 
 static int vc_status(void)
 {
-	int col = vi_off2col(xb, xrow, xoff);
-	int win = w_tmp ? '-' : '=';
-	snprintf(vi_msg, sizeof(vi_msg),
-		"\"%s\"%c [%c%d]  L%d C%d",
-		ex_path()[0] ? ex_path() : "unnamed",
-		lbuf_modified(xb) ? '*' : ' ',
-		win, lbuf_len(xb), xrow + 1,
-		ren_cursor(lbuf_get(xb, xrow), col) + 1);
+	vi_status();
 	return 0;
+}
+
+void vi_status(void)
+{
+	int col = vi_off2col(xb, xrow, xoff);
+	char *relpath = ex_path();
+	char abspath[4096];
+	char *fullpath;
+	char *displaypath;
+	char *last_slash;
+	char *prev_slash;
+	char git_str[256] = "";
+
+	/* get git info if valid */
+	if (git_cache.valid) {
+		if (git_cache.stats[0]) {
+			snprintf(git_str, sizeof(git_str), "(%s) %s ",
+				git_cache.branch, git_cache.stats);
+		} else {
+			snprintf(git_str, sizeof(git_str), "(%s) ",
+				git_cache.branch);
+		}
+	}
+
+	/* resolve full path - handle non-existent files */
+	if (relpath[0] && realpath(relpath, abspath)) {
+		fullpath = abspath;
+	} else if (relpath[0] == '/') {
+		/* absolute path */
+		fullpath = relpath;
+	} else if (relpath[0]) {
+		/* relative path to possibly non-existent file */
+		char cwd[4096];
+		if (getcwd(cwd, sizeof(cwd))) {
+			snprintf(abspath, sizeof(abspath), "%s/%s", cwd, relpath);
+			fullpath = abspath;
+		} else {
+			fullpath = relpath;
+		}
+	} else {
+		fullpath = "unnamed";
+	}
+
+	/* extract parent_dir/filename from full path */
+	displaypath = fullpath;
+	if (fullpath[0]) {
+		last_slash = strrchr(fullpath, '/');
+		if (last_slash && last_slash > fullpath) {
+			/* has directory - find parent directory */
+			prev_slash = last_slash - 1;
+			while (prev_slash > fullpath && *prev_slash != '/')
+				prev_slash--;
+
+			if (*prev_slash == '/') {
+				/* found parent directory */
+				displaypath = prev_slash + 1;
+			} else {
+				/* only one directory level */
+				displaypath = fullpath;
+			}
+		}
+		/* else: no directory or root level, show as-is */
+	}
+
+	snprintf(vi_msg, sizeof(vi_msg),
+		"%s%s L%d C%d",
+		git_str,
+		displaypath,
+		xrow + 1,
+		ren_cursor(lbuf_get(xb, xrow), col) + 1);
 }
 
 static int vc_charinfo(void)
@@ -1470,9 +1535,11 @@ static void vi(void)
 	int kmap = 0;
 	signal(SIGWINCH, sigwinch);
 	vi_switch(0);
+	git_update(&git_cache, ex_path());
 	xtop = MAX(0, xrow - xrows / 2);
 	xoff = 0;
 	xcol = vi_off2col(xb, xrow, xoff);
+	vc_status();	/* set initial status line */
 	term_record();
 	vi_drawagain(xcol, -1);
 	term_pos(xrow - xtop, vi_pos(lbuf_get(xb, xrow), xcol));
@@ -1640,14 +1707,24 @@ static void vi(void)
 			case ':':
 				ln = vi_prompt(":", &kmap, reg_getln(':'));
 				if (ln && ln[0]) {
+					int is_write = 0;
 					reg_putln(':', ln);
 					if (ln[0] != ':') {
 						char *ln2 = uc_cat(":", ln);
 						free(ln);
 						ln = ln2;
 					}
-					if (ex_command(ln) == 0 && strcmp(ln, ":w") != 0)
-						mod = VC_ALL;
+					/* check if this is a write command */
+					is_write = (ln[1] == 'w' && (ln[2] == '\0' || ln[2] == ' ' || ln[2] == 'q'));
+					if (ex_command(ln) == 0) {
+						if (is_write) {
+							/* refresh git info and status after write */
+							git_update(&git_cache, ex_path());
+							vc_status();
+						} else {
+							mod = VC_ALL;
+						}
+					}
 					reg_put(':', ln, 1);
 				}
 				free(ln);
@@ -1820,6 +1897,9 @@ static void vi(void)
 		vi_wait();
 		term_record();
 		ru = (xru & 1) || ((xru & 2) && w_cnt > 1) || ((xru & 4) && opath != ex_path());
+		/* update git info when path changes */
+		if (opath != ex_path())
+			git_update(&git_cache, ex_path());
 		if (mod & VC_ALT && w_cnt == 1)
 			vi_switch(w_cur);
 		if (mod & VC_ALT && w_cnt > 1) {
