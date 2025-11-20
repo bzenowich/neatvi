@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "vi.h"
+#include "multicursor.h"
 
 #define REG(s)	((s)[0] != '\\' ? (unsigned char) (s)[0] : 0x80 | (unsigned char) (s)[1])
 
@@ -30,6 +31,7 @@ int xkmap_alt = 1;		/* the alternate keymap */
 int xlim = 256;			/* do not process lines longer than this */
 int xru = 1;			/* show line number */
 int xhist = 0;			/* number of history lines */
+struct mc *xmc;			/* multi-cursor manager */
 static char xkwd[EXLEN];	/* the last searched keyword */
 static char xrep[EXLEN];	/* the last replacement */
 static int xkwddir;		/* the last search direction */
@@ -1416,6 +1418,7 @@ void ex(void)
 
 int ex_init(char **files)
 {
+	xmc = mc_make();
 	next = files;
 	if (ex_next("e", 0))
 		return 1;
@@ -1429,4 +1432,5 @@ void ex_done(void)
 	int i;
 	for (i = 0; i < LEN(bufs); i++)
 		bufs_free(i);
+	mc_free(xmc);
 }

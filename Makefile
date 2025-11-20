@@ -3,7 +3,8 @@ CFLAGS = -Wall -O2
 LDFLAGS =
 
 OBJS = vi.o ex.o lbuf.o mot.o sbuf.o ren.o dir.o syn.o reg.o led.o \
-	uc.o term.o rset.o rstr.o regex.o cmd.o tag.o conf.o server.o git.o
+	uc.o term.o rset.o rstr.o regex.o cmd.o tag.o conf.o server.o git.o \
+	multicursor.o
 STAG = stag.o regex.o
 
 all: vi stag

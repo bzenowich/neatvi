@@ -1,4 +1,5 @@
 /* neatvi main header */
+#include "multicursor.h"
 
 /* helper macros */
 #define LEN(a)		(sizeof(a) / sizeof((a)[0]))
@@ -229,6 +230,7 @@ extern int xkmap_alt;
 extern int xlim;
 extern int xru;
 extern int xhist;
+extern struct mc *xmc;
 
 /* tag file handling */
 int tag_init(void);

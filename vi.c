@@ -1086,6 +1086,10 @@ static int vc_insert(int cmd)
 	char *ln = lbuf_get(xb, xrow);
 	int row, ohll, off = 0;
 	char *rep;
+	int mc_mode = mc_active(xmc);
+	int mc_n = mc_mode ? mc_count(xmc) : 0;
+	int i;
+
 	if (cmd == 'I')
 		xoff = lbuf_indents(xb, xrow);
 	if (cmd == 'A')
@@ -1107,17 +1111,72 @@ static int vc_insert(int cmd)
 	if ((cmd == 'o' || cmd == 'O') && !lbuf_len(xb))
 		lbuf_edit(xb, "\n", 0, 0);
 	if (rep) {
-		int beg = xrow - row + 1;
-		lbuf_edit(xb, rep, beg, beg + (cmd != 'o' && cmd != 'O'));
-		xoff = off;
-		free(rep);
+		/* apply to all multi-cursors if active */
+		if (mc_mode) {
+			/* extract user input by removing original pref/post from rep */
+			char *user_input;
+			int pref_len = strlen(pref);
+			int post_len = strlen(post);
+			int rep_len = strlen(rep);
+			int input_len = rep_len - pref_len - post_len;
+
+			if (input_len >= 0 && strncmp(rep, pref, pref_len) == 0) {
+				user_input = uc_sub(rep, pref_len, pref_len + input_len);
+			} else {
+				/* fallback: use entire rep if prefix doesn't match */
+				user_input = uc_dup(rep);
+			}
+
+			/* process cursors in reverse order (bottom to top, right to left) to avoid position conflicts */
+			for (i = mc_n - 1; i >= 0; i--) {
+				int crow, coff;
+				if (mc_get(xmc, i, &crow, &coff) == 0) {
+					char *cln = lbuf_get(xb, crow);
+					char *cpref, *cpost, *crep, *tmp;
+					int coff_ins = coff;
+					/* handle special positioning for different insert commands */
+					if (cmd == 'I')
+						coff_ins = lbuf_indents(xb, crow);
+					else if (cmd == 'A')
+						coff_ins = lbuf_eol(xb, crow);
+					else if (cmd == 'a')
+						coff_ins = coff + 1;
+					else if (cmd == 'i')
+						coff_ins = coff;
+					if (cln && cln[0] == '\n')
+						coff_ins = 0;
+					cpref = cln && cmd != 'o' && cmd != 'O' ? uc_sub(cln, 0, coff_ins) : vi_indents(cln);
+					cpost = cln && cmd != 'o' && cmd != 'O' ? uc_sub(cln, coff_ins, -1) : uc_dup("\n");
+					tmp = uc_cat(user_input, cpost);
+					crep = uc_cat(cpref, tmp);
+					lbuf_edit(xb, crep, crow, crow + (cmd != 'o' && cmd != 'O'));
+					free(cpref);
+					free(cpost);
+					free(tmp);
+					free(crep);
+				}
+			}
+			mc_clear(xmc);
+			xoff = off;
+			free(user_input);
+			free(rep);
+			free(pref);
+			free(post);
+			return VC_WIN;
+		} else {
+			/* normal single-cursor mode */
+			int beg = xrow - row + 1;
+			lbuf_edit(xb, rep, beg, beg + (cmd != 'o' && cmd != 'O'));
+			xoff = off;
+			free(rep);
+			ohll = cmd == 'O' && xhll;
+			vi_drawfix(xrow - row + 1, xrow + ohll, row + ohll, 0);
+		}
 	}
 	free(pref);
 	free(post);
 	if (rep == NULL)
 		return 0;
-	ohll = cmd == 'O' && xhll;
-	vi_drawfix(xrow - row + 1, xrow + ohll, row + ohll, 0);
 	return VC_OK;
 }
 
@@ -1754,6 +1813,16 @@ static void vi(void)
 				term_done();
 				term_init();
 				mod = VC_ALL;
+				break;
+			case TK_CTL('n'):
+				mc_add(xmc, xrow, xoff);
+				snprintf(vi_msg, sizeof(vi_msg), "%d cursors", mc_count(xmc));
+				mod = VC_WIN;
+				break;
+			case TK_CTL('\\'):
+				mc_clear(xmc);
+				snprintf(vi_msg, sizeof(vi_msg), "cursors cleared");
+				mod = VC_WIN;
 				break;
 			case 'm':
 				if ((mark = vi_read()) > 0 && islower(mark))
