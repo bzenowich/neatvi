@@ -78,10 +78,58 @@ static void vi_drawquick(char *s, int row)
 static void vi_drawrow(int row)
 {
 	char *s = lbuf_get(xb, row);
+	char *display_s = s;
+	struct sbuf *marked = NULL;
+
+	/* add visual markers for multi-cursors on this row */
+	if (mc_active(xmc)) {
+		int i, n = mc_count(xmc);
+		int has_cursor = 0;
+
+		/* check if this row has any cursors */
+		for (i = 0; i < n; i++) {
+			int crow, coff;
+			if (mc_get(xmc, i, &crow, &coff) == 0 && crow == row) {
+				has_cursor = 1;
+				break;
+			}
+		}
+
+		if (has_cursor && s) {
+			marked = sbuf_make();
+			int last_pos = 0;
+
+			/* insert '|' markers at each cursor position */
+			for (i = 0; i < n; i++) {
+				int crow, coff;
+				if (mc_get(xmc, i, &crow, &coff) == 0 && crow == row) {
+					/* add text before cursor */
+					if (coff > last_pos) {
+						char *seg = uc_sub(s, last_pos, coff);
+						sbuf_str(marked, seg);
+						free(seg);
+					}
+					/* add cursor marker */
+					sbuf_str(marked, "▌");  /* left half block as cursor marker */
+					last_pos = coff;
+				}
+			}
+			/* add remaining text */
+			char *seg = uc_sub(s, last_pos, -1);
+			sbuf_str(marked, seg);
+			free(seg);
+
+			display_s = sbuf_buf(marked);
+		}
+	}
+
 	if (xhll && row == xrow)
 		syn_context(conf_hlline());
-	led_print(s ? s : (row ? "~" : ""), row - xtop, xleft, xhl ? ex_filetype() : "");
+	led_print(display_s ? display_s : (row ? "~" : ""), row - xtop, xleft, xhl ? ex_filetype() : "");
 	syn_context(0);
+
+	if (marked)
+		sbuf_free(marked);
 }
 
 /* redraw the given row; if row is -1 redraws all rows */
