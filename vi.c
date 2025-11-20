@@ -1107,11 +1107,132 @@ static int vc_insert(int cmd)
 	post = ln && cmd != 'o' && cmd != 'O' ? uc_sub(ln, off, -1) : uc_dup("\n");
 	if (cmd == 'O')
 		term_room(1);
+
+	/* multi-cursor mode: real-time character-by-character input */
+	if (mc_mode && cmd != 'o' && cmd != 'O') {
+		struct sbuf *sb = sbuf_make();
+		int c;
+		/* save original lines and positions for each cursor */
+		char **orig_lines = malloc(mc_n * sizeof(char*));
+		int *orig_offs = malloc(mc_n * sizeof(int));
+		int *orig_rows = malloc(mc_n * sizeof(int));
+
+		for (i = 0; i < mc_n; i++) {
+			int crow, coff;
+			if (mc_get(xmc, i, &crow, &coff) == 0) {
+				char *cln = lbuf_get(xb, crow);
+				orig_lines[i] = cln ? uc_dup(cln) : uc_dup("\n");
+				orig_rows[i] = crow;
+				orig_offs[i] = coff;
+			}
+		}
+
+		/* read and apply characters in real-time */
+		while (1) {
+			c = vi_read();
+
+			/* exit on Esc or Ctrl+C */
+			if (c == TK_ESC || c == TK_CTL('c'))
+				break;
+
+			/* handle backspace */
+			if (c == 127 || c == TK_CTL('h') || c == TK_CTL('?')) {
+				if (sbuf_len(sb) > 0) {
+					char *tmp = sbuf_buf(sb);
+					int len = strlen(tmp);
+					/* find start of last UTF-8 character */
+					while (len > 0 && (tmp[len-1] & 0xC0) == 0x80)
+						len--;
+					if (len > 0)
+						len--;
+					sbuf_cut(sb, len);
+				} else {
+					continue;
+				}
+			} else {
+				/* add character to buffer */
+				sbuf_chr(sb, c);
+			}
+
+			/* apply current input to all cursors using ORIGINAL lines */
+			/* process each unique row, merging cursors on same line */
+			for (i = mc_n - 1; i >= 0; i--) {
+				int crow = orig_rows[i];
+				char *cln = orig_lines[i];
+				struct sbuf *line_sb = sbuf_make();
+				int last_pos = 0;
+				int j;
+
+				/* find all cursors on this row and merge their edits */
+				for (j = 0; j < mc_n; j++) {
+					if (orig_rows[j] == crow) {
+						int coff_ins = orig_offs[j];
+
+						/* handle special positioning */
+						if (cmd == 'I')
+							coff_ins = lbuf_indents(xb, crow);
+						else if (cmd == 'A')
+							coff_ins = lbuf_eol(xb, crow);
+						else if (cmd == 'a')
+							coff_ins = orig_offs[j] + 1;
+						else if (cmd == 'i')
+							coff_ins = orig_offs[j];
+
+						if (cln && cln[0] == '\n')
+							coff_ins = 0;
+
+						/* add text from last_pos to coff_ins */
+						if (coff_ins > last_pos) {
+							char *segment = uc_sub(cln, last_pos, coff_ins);
+							sbuf_str(line_sb, segment);
+							free(segment);
+						}
+
+						/* insert the typed text */
+						sbuf_str(line_sb, sbuf_buf(sb));
+						last_pos = coff_ins;
+					}
+				}
+
+				/* add remaining text after last cursor */
+				if (cln) {
+					char *segment = uc_sub(cln, last_pos, -1);
+					sbuf_str(line_sb, segment);
+					free(segment);
+				}
+
+				/* apply the merged edit */
+				char *merged = sbuf_done(line_sb);
+				lbuf_edit(xb, merged, crow, crow + 1);
+				free(merged);
+
+				/* skip other cursors on this row */
+				while (i > 0 && orig_rows[i - 1] == crow)
+					i--;
+			}
+
+			/* redraw screen */
+			vi_drawagain(1, -1);
+		}
+
+		/* cleanup */
+		for (i = 0; i < mc_n; i++)
+			free(orig_lines[i]);
+		free(orig_lines);
+		free(orig_offs);
+		free(orig_rows);
+		mc_clear(xmc);
+		sbuf_free(sb);
+		free(pref);
+		free(post);
+		return VC_WIN;
+	}
+
 	rep = vi_input(pref, post, &row, &off);
 	if ((cmd == 'o' || cmd == 'O') && !lbuf_len(xb))
 		lbuf_edit(xb, "\n", 0, 0);
 	if (rep) {
-		/* apply to all multi-cursors if active */
+		/* apply to all multi-cursors if active (for 'o' and 'O' commands) */
 		if (mc_mode) {
 			/* extract user input by removing original pref/post from rep */
 			char *user_input;
