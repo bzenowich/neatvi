@@ -47,4 +47,17 @@ void mc_remove(struct mc *mc, int i);
  */
 void mc_adjust(struct mc *mc, int pos, int n_del, int n_ins, int off, int off_delta);
 
+/* build a display line with visual cursor markers
+ * returns a new string with markers inserted, or NULL if no cursors on this row
+ * caller must free the returned string
+ */
+char *mc_build_display_line(struct mc *mc, char *line, int row);
+
+/* real-time character input for multi-cursor mode
+ * handles character-by-character input with live updates at all cursor positions
+ * cmd: insert command ('i', 'a', 'I', 'A')
+ * returns 0 on success, non-zero on error
+ */
+int mc_realtime_input(struct mc *mc, int cmd);
+
 #endif

@@ -145,6 +145,10 @@ void led_print(char *msg, int row, int left, char *syn);
 void led_printmsg(char *s, int row, char *syn);
 char *led_read(int *kmap);
 
+/* vi commands */
+int vi_read(void);
+void vi_drawagain(int xcol, int row);
+
 /* ex commands */
 void ex(void);
 int ex_command(char *cmd);
