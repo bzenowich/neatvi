@@ -24,7 +24,7 @@ Example Workflow
 Technical Details
 
 - Memory efficient: Dynamic array grows as needed
-- Undo/redo compatible: Multi-cursor edits work with undo (Ctrl+U) and redo (Ctrl+R)
+- Undo/redo compatible: Multi-cursor edits are a single step; undo (u) reverts all insertions at once, and redo (Ctrl+R) reapplies them
 - UTF-8 aware: Handles multi-byte characters correctly
 - No position conflicts: Duplicate cursor prevention built-in
 - All insert commands: Works with i, a, I, A, o, O

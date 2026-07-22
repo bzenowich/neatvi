@@ -81,6 +81,9 @@ New key mappings:
 - zj, zk, zD: equivalent to :b+, :b-, :b !.
 - zJ, zK: equivalent to :next, :prev.
 - q in normal mode: see quick access section.
+- ^n in normal mode: adds a cursor at the current position (see
+  multiple cursors section).
+- ^\ in normal mode: removes all extra cursors.
 - ^a in ex, search, and pipe prompts: inserts from history lines.
 
 Other noteworthy differences with vi(1):
@@ -179,6 +182,39 @@ Special yank buffers:
 - \: ex command history
 - \! pipe command history
 
+MULTIPLE CURSORS
+----------------
+
+Neatvi can edit at several positions at once, which is handy for
+making the same change on many lines.
+
+Place the cursor where you want an edit and press ^n to add a cursor
+there; the status line shows the current cursor count (for example,
+"3 cursors").  Move to the next position and press ^n again, repeating
+for every place you want to edit.  Adding a cursor at a position that
+already has one has no effect, so duplicates are ignored.
+
+Once the cursors are set, enter insert mode with any of the usual
+commands (i, a, I, A, o, or O) and type.  The text is inserted at every
+cursor simultaneously.  Pressing Esc to leave insert mode applies the
+edit and clears all cursors.  The edit is a single undo step, so u
+reverts every insertion at once (and ^r redoes it).
+
+To discard the cursors without editing, press ^\; the status line
+confirms with "cursors cleared".
+
+A typical workflow for prefixing three lines with the same text:
+
+  1. Move to the first line and press ^n.
+  2. Move to the second line and press ^n.
+  3. Move to the third line and press ^n ("3 cursors").
+  4. Press I to insert at the start of each line.
+  5. Type the text (it appears on all three lines).
+  6. Press Esc to apply the edit; the cursors are cleared.
+
+Cursor positions are UTF-8 aware, so multi-byte characters are handled
+correctly.
+
 QUICK ACCESS
 ------------
 
@@ -220,3 +256,10 @@ works.
 
 In a real implementation, the \~ buffer can use external commands
 (with rx or rk) to compute the completions.
+
+DOCUMENTATION
+-------------
+
+Additional documentation:
+- multicursor.md  multiple-cursor editing.
+- stag.md         indexing code and searching by token with stag.
