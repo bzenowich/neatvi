@@ -47,6 +47,14 @@ Commands not available in ex(1):
   if buf is a buffer number or alias.  Also, buf can be -, +, !,
   and ~ to switch to the previous buffer, switch to the next buffer,
   delete the current buffer, and renumber buffers, respectively.
+:bs path
+  Writes the buffer list to path, one "row<tab>file" line per named
+  buffer, in buffer order.  Pair it with :bl to save and restore a
+  session.
+:bl path
+  Opens the buffers listed in a file written by :bs, restoring the
+  buffer order and each buffer's cursor row.  A missing path is not
+  an error, so this is safe to run unconditionally from EXINIT.
 :rs reg
   Reads dot-terminated lines (similar to :a command) from ex input
   and copies them to the given yank buffer.
