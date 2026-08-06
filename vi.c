@@ -2038,7 +2038,7 @@ int main(int argc, char *argv[])
 	char *prog = strchr(argv[0], '/') ? strrchr(argv[0], '/') + 1 : argv[0];
 	char *servername = NULL;
 	char *remote_cmd = NULL;
-	int remote_tab = 0;
+	int remote_raw = 0;		/* send remote_cmd as an ex command */
 	xvis = strcmp("ex", prog) && strcmp("neatex", prog);
 	for (i = 1; i < argc && argv[i][0] == '-'; i++) {
 		if (argv[i][1] == 's' && argv[i][2] == '\0')
@@ -2049,13 +2049,14 @@ int main(int argc, char *argv[])
 			xvis = 1;
 		else if (!strcmp(argv[i], "--servername") && i + 1 < argc)
 			servername = argv[++i];
-		else if (!strcmp(argv[i], "--remote") && i + 1 < argc) {
+		else if (!strcmp(argv[i], "--remote") && i + 1 < argc)
 			remote_cmd = argv[++i];
-			remote_tab = 0;
-		}
-		else if (!strcmp(argv[i], "--remote-tab") && i + 1 < argc) {
+		/* neatvi has no tabs; kept as an alias for --remote */
+		else if (!strcmp(argv[i], "--remote-tab") && i + 1 < argc)
 			remote_cmd = argv[++i];
-			remote_tab = 1;
+		else if (!strcmp(argv[i], "--remote-send") && i + 1 < argc) {
+			remote_cmd = argv[++i];
+			remote_raw = 1;
 		}
 		else if (!strcmp(argv[i], "--serverlist")) {
 			server_list();
@@ -2070,6 +2071,7 @@ int main(int argc, char *argv[])
 			printf("  --servername NAME  start or connect to named server\n");
 			printf("  --remote FILE      open file in existing server\n");
 			printf("  --remote-tab FILE  open file in new tab in existing server\n");
+			printf("  --remote-send CMD  run an ex command in existing server\n");
 			printf("  --serverlist       list running servers\n");
 			return 0;
 		}
@@ -2078,8 +2080,8 @@ int main(int argc, char *argv[])
 	if (remote_cmd) {
 		char cmd[EXLEN];
 		char *name = servername ? servername : "NEATVI";
-		if (remote_tab)
-			snprintf(cmd, sizeof(cmd), ":e %s", remote_cmd);
+		if (remote_raw)
+			snprintf(cmd, sizeof(cmd), "%s", remote_cmd);
 		else
 			snprintf(cmd, sizeof(cmd), ":e %s", remote_cmd);
 		return server_send(name, cmd);

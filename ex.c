@@ -500,24 +500,112 @@ static int ec_edit(char *loc, char *cmd, char *arg, char *txt)
 	return 0;
 }
 
+/* escape the characters ex_pathexpand() would interpret in a path */
+static void ex_pathescape(char *dst, char *src, int len)
+{
+	char *end = dst + len;
+	while (*src && dst + 2 < end) {
+		if (*src == ' ' || *src == '%' || *src == '#' || *src == '=')
+			*dst++ = '\\';
+		*dst++ = *src++;
+	}
+	*dst = '\0';
+}
+
+/* :bs path -- write the buffer list, one "row<tab>path" line per buffer */
+static int ec_bufsave(char *loc, char *cmd, char *arg, char *txt)
+{
+	struct sbuf *sb;
+	char *path;
+	int fd, i, ret = 0;
+	if (!arg[0] || !(path = ex_pathexpand(arg, 1)))
+		return 1;
+	if ((fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600)) < 0) {
+		ex_show("cannot write buffer list");
+		return 1;
+	}
+	bufs_save();
+	sb = sbuf_make();
+	for (i = 0; i < LEN(bufs) && bufs[i].lb; i++) {
+		if (!bufs[i].path || !bufs[i].path[0])
+			continue;
+		sbuf_printf(sb, "%d\t", bufs[i].row);
+		sbuf_str(sb, bufs[i].path);
+		sbuf_chr(sb, '\n');
+	}
+	if (write(fd, sbuf_buf(sb), sbuf_len(sb)) != sbuf_len(sb)) {
+		ex_show("cannot write buffer list");
+		ret = 1;
+	}
+	sbuf_free(sb);
+	close(fd);
+	return ret;
+}
+
+/* :bl path -- reopen the buffers listed in path, restoring their rows */
+static int ec_bufload(char *loc, char *cmd, char *arg, char *txt)
+{
+	char *paths[LEN(bufs)];
+	int rows[LEN(bufs)];
+	struct sbuf *sb;
+	char buf[1 << 10];
+	char *path, *s, *sep;
+	int fd, n = 0, i;
+	long nr;
+	if (!arg[0] || !(path = ex_pathexpand(arg, 1)))
+		return 1;
+	/* a missing list is not an error; there is just nothing to restore */
+	if ((fd = open(path, O_RDONLY)) < 0)
+		return 0;
+	sb = sbuf_make();
+	while ((nr = read(fd, buf, sizeof(buf))) > 0)
+		sbuf_mem(sb, buf, nr);
+	close(fd);
+	s = sbuf_buf(sb);
+	while (*s && n < LEN(bufs) - 1) {
+		char *ln = s;
+		while (*s && *s != '\n')
+			s++;
+		if (*s == '\n')
+			*s++ = '\0';
+		if ((sep = strchr(ln, '\t')) == NULL || !sep[1])
+			continue;
+		*sep = '\0';
+		rows[n] = atoi(ln);
+		paths[n] = sep + 1;
+		n++;
+	}
+	/* in reverse, so that the first listed buffer ends up current */
+	for (i = n - 1; i >= 0; i--) {
+		char arg2[EXLEN];
+		ex_pathescape(arg2, paths[i], sizeof(arg2));
+		if (ec_edit("", "e!", arg2, NULL))
+			continue;
+		xrow = MAX(0, MIN(rows[i], lbuf_len(xb) - 1));
+	}
+	sbuf_free(sb);
+	/* drop the empty buffer vi started with, now that files are open */
+	for (i = 0; n > 0 && i < LEN(bufs); i++) {
+		if (bufs[i].lb && !bufs[i].path[0] && !lbuf_len(bufs[i].lb)) {
+			bufs_switch(i);
+			bufs_shift();
+			break;
+		}
+	}
+	return 0;
+}
+
 static int ex_next(char *cmd, int dis)
 {
 	char arg[EXLEN];
 	int old = next_pos;
 	int idx = next != NULL && next[old] != NULL ? next_pos + dis : -1;
 	char *path = idx >= 0 && next[idx] != NULL ? next[idx] : NULL;
-	char *s = arg;
-	char *r = path != NULL ? path : "";
 	if (dis && path == NULL) {
 		ex_show("no more files");
 		return 1;
 	}
-	while (*r && s + 2 < arg + sizeof(arg)) {
-		if (*r == ' ' || *r == '%' || *r == '#' || *r == '=')
-			*s++ = '\\';
-		*s++ = *r++;
-	}
-	*s = '\0';
+	ex_pathescape(arg, path != NULL ? path : "", sizeof(arg));
 	if (ec_edit("", cmd, arg, NULL))
 		return 1;
 	next_pos = idx;
@@ -1190,6 +1278,8 @@ static struct excmd {
 } excmds[] = {
 	{"a", "append", ec_insert},
 	{"b", "buffer", ec_buffer},
+	{"bs", "bs", ec_bufsave},
+	{"bl", "bl", ec_bufload},
 	{"d", "delete", ec_delete},
 	{"c", "change", ec_insert},
 	{"cm", "cmap", ec_cmap},
