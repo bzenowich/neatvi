@@ -48,6 +48,7 @@ static struct buf {
 } bufs[16];
 
 static int bufs_cnt = 0;	/* number of allocated buffers */
+static char *buf_aliases = "%#^";	/* buffer aliases, by recency */
 
 static void bufs_free(int idx)
 {
@@ -388,61 +389,87 @@ static int bufs_modified(int idx, char *msg)
 	return 1;
 }
 
-static int ec_buffer(char *loc, char *cmd, char *arg, char *txt)
+/* switch to the buffer at the given index */
+static int buf_switch(char *cmd, int idx)
 {
-	char *aliases = "%#^";
+	if (idx < 0 || idx >= LEN(bufs) || !bufs[idx].lb) {
+		ex_show("no such buffer");
+		return 1;
+	}
+	if (!xwa && strchr(cmd, '!') == NULL)
+		if (bufs_modified(0, "buffer modified"))
+			return 1;
+	bufs_switch(idx);
+	return 0;
+}
+
+static int ec_buffers(char *loc, char *cmd, char *arg, char *txt)
+{
 	char ln[128];
 	int i;
-	if (!arg[0]) {
-		/* print buffer list */
-		for (i = 0; i < LEN(bufs) && bufs[i].lb; i++) {
-			char c = i < strlen(aliases) ? aliases[i] : ' ';
-			char m = lbuf_modified(bufs[i].lb) ? '*' : ' ';
-			snprintf(ln, LEN(ln), "%2i %c %s %c",
-					(int) bufs[i].id, c, bufs[i].path, m);
-			ex_print(ln);
-		}
-	} else if (arg[0] == '!') {
-		/* delete buffer */
-		bufs_shift();
-		if (bufs[0].lb == NULL)
-			bufs_init(0, "");
-	} else if (arg[0] == '~') {
-		/* reassign buffer ids */
-		bufs_number();
-	} else {
-		int id = arg[0] ? atoi(arg) : 0;
-		int idx = -1;
-		/* switch to the given buffer */
-		if (isdigit((unsigned char) arg[0])) {	/* buffer id given */
-			for (idx = 0; idx < LEN(bufs); idx++)
-				if (bufs[idx].lb && id == bufs[idx].id)
-					break;
-		} else if (arg[0] == '-') {		/* previous buffer */
-			for (i = 0; i < LEN(bufs); i++)
-				if (bufs[i].lb && bufs[i].id < bufs[0].id)
-					if (idx < 0 || bufs[i].id > bufs[idx].id)
-						idx = i;
-		} else if (arg[0] == '+') {		/* next buffer */
-			for (i = 0; i < LEN(bufs); i++)
-				if (bufs[i].lb && bufs[i].id > bufs[0].id)
-					if (idx < 0 || bufs[i].id < bufs[idx].id)
-						idx = i;
-		} else {				/* buffer alias given */
-			char *r = strchr(aliases, (unsigned char) arg[0]);
-			idx = r ? r - aliases : -1;
-		}
-		if (idx >= 0 && idx < LEN(bufs) && bufs[idx].lb) {
-			if (!xwa && strchr(cmd, '!') == NULL)
-				if (bufs_modified(0, "buffer modified"))
-					return 1;
-			bufs_switch(idx);
-		} else {
-			ex_show("no such buffer");
-			return 1;
-		}
+	for (i = 0; i < LEN(bufs) && bufs[i].lb; i++) {
+		char c = i < strlen(buf_aliases) ? buf_aliases[i] : ' ';
+		char m = lbuf_modified(bufs[i].lb) ? '*' : ' ';
+		snprintf(ln, LEN(ln), "%2i %c %s %c",
+				(int) bufs[i].id, c, bufs[i].path, m);
+		ex_print(ln);
 	}
 	return 0;
+}
+
+static int ec_bufnext(char *loc, char *cmd, char *arg, char *txt)
+{
+	int idx = -1;
+	int i;
+	for (i = 0; i < LEN(bufs); i++)
+		if (bufs[i].lb && bufs[i].id > bufs[0].id)
+			if (idx < 0 || bufs[i].id < bufs[idx].id)
+				idx = i;
+	return buf_switch(cmd, idx);
+}
+
+static int ec_bufprev(char *loc, char *cmd, char *arg, char *txt)
+{
+	int idx = -1;
+	int i;
+	for (i = 0; i < LEN(bufs); i++)
+		if (bufs[i].lb && bufs[i].id < bufs[0].id)
+			if (idx < 0 || bufs[i].id > bufs[idx].id)
+				idx = i;
+	return buf_switch(cmd, idx);
+}
+
+static int ec_bufdelete(char *loc, char *cmd, char *arg, char *txt)
+{
+	bufs_shift();
+	if (bufs[0].lb == NULL)
+		bufs_init(0, "");
+	return 0;
+}
+
+static int ec_bufrenumber(char *loc, char *cmd, char *arg, char *txt)
+{
+	bufs_number();
+	return 0;
+}
+
+static int ec_buffer(char *loc, char *cmd, char *arg, char *txt)
+{
+	int idx = -1;
+	if (!arg[0]) {
+		ex_show("no buffer given");
+		return 1;
+	}
+	if (isdigit((unsigned char) arg[0])) {	/* buffer id given */
+		int id = atoi(arg);
+		for (idx = 0; idx < LEN(bufs); idx++)
+			if (bufs[idx].lb && id == bufs[idx].id)
+				break;
+	} else {				/* buffer alias given */
+		char *r = strchr(buf_aliases, (unsigned char) arg[0]);
+		idx = r ? r - buf_aliases : -1;
+	}
+	return buf_switch(cmd, idx);
 }
 
 int ex_list(char **ls, int size)
@@ -1276,8 +1303,18 @@ static struct excmd {
 } excmds[] = {
 	{"a", "append", ec_insert},
 	{"b", "buffer", ec_buffer},
+	{"b!", "buffer!", ec_buffer},
+	{"bd", "bdelete", ec_bufdelete},
+	{"bd!", "bdelete!", ec_bufdelete},
+	{"bn", "bnext", ec_bufnext},
+	{"bn!", "bnext!", ec_bufnext},
+	{"bp", "bprev", ec_bufprev},
+	{"bp!", "bprev!", ec_bufprev},
+	{"br", "brenumber", ec_bufrenumber},
 	{"bs", "bs", ec_bufsave},
 	{"bl", "bl", ec_bufload},
+	{"ls", "buffers", ec_buffers},
+	{"files", "files", ec_buffers},
 	{"d", "delete", ec_delete},
 	{"c", "change", ec_insert},
 	{"cm", "cmap", ec_cmap},

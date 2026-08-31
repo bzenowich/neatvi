@@ -42,11 +42,18 @@ Commands not available in ex(1):
   Jumps to the previous matching tag.
 :po[p]
   Pops tag stack.
-:b[uffer] [buf]
-  Without buf, prints buffer list.  Switches to the given buffer
-  if buf is a buffer number or alias.  Also, buf can be -, +, !,
-  and ~ to switch to the previous buffer, switch to the next buffer,
-  delete the current buffer, and renumber buffers, respectively.
+:b[uffer] buf
+  Switches to the given buffer, which is a buffer number or alias.
+:ls, :buffers, :files
+  Prints the buffer list.
+:bn[ext]
+  Switches to the next buffer.
+:bp[rev]
+  Switches to the previous buffer.
+:bd[elete]
+  Deletes the current buffer.
+:br[enumber]
+  Renumbers buffers.
 :bs path
   Writes the buffer list to path, one "row<tab>file" line per named
   buffer, in buffer order.  Pair it with :bl to save and restore a
@@ -86,7 +93,7 @@ New key mappings:
 - gl in normal mode: like gf, but it reads line and column numbers too.
 - ^ws, ^wo, ^wc, ^wj, ^wk, ^wx in normal mode: manages windows.
 - ^wgf, ^wgl, ^w^] in normal mode: executes gf, gl, ^] in a new window.
-- zj, zk, zD: equivalent to :b+, :b-, :b !.
+- zj, zk, zD: equivalent to :bn, :bp, :bd.
 - zJ, zK: equivalent to :next, :prev.
 - q in normal mode: see quick access section.
 - ^a in ex, search, and pipe prompts: inserts from history lines.

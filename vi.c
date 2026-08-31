@@ -1790,7 +1790,7 @@ static void vi(void)
 					break;
 				case 'j':
 				case 'k':
-					if (!ex_command(k == 'j' ? "b +" : "b -"))
+					if (!ex_command(k == 'j' ? "bn" : "bp"))
 						mod = VC_WIN;
 					break;
 				case 'J':
@@ -1799,7 +1799,7 @@ static void vi(void)
 						mod = VC_WIN;
 					break;
 				case 'D':
-					if (!ex_command("b !"))
+					if (!ex_command("bd"))
 						mod = VC_WIN;
 					break;
 				}
