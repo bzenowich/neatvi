@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdio.h>
@@ -42,6 +43,8 @@ void term_init(void)
 	cols = cols ? cols : 80;
 	rows = rows ? rows : 25;
 	term_str("\33[m");
+	if (xvis)	/* enable mouse reporting (SGR mode) */
+		term_str("\33[?1000h\33[?1006h");
 	term_window(win_beg, win_rows > 0 ? win_rows : rows);
 
 	/* Set up signal handler for server refresh interrupts */
@@ -66,6 +69,8 @@ void term_window(int row, int cnt)
 
 void term_done(void)
 {
+	if (xvis)
+		term_str("\33[?1006l\33[?1000l");
 	term_str("\33[r");
 	term_pos(rows - 1, 0);
 	term_kill();
@@ -180,7 +185,7 @@ char *term_cmd(int *n)
 	return icmd;
 }
 
-int term_read(void)
+static int term_readraw(void)
 {
 	struct pollfd ufds[2];
 	int nfds, n, c;
@@ -298,4 +303,71 @@ char *term_seqattr(int att, int old)
 char *term_seqkill(void)
 {
 	return "\33[K";
+}
+
+/* read a byte from the terminal, waiting at most ms milliseconds */
+static int term_readwait(int ms)
+{
+	struct pollfd ufd = {0, POLLIN};
+	unsigned char c;
+	if (poll(&ufd, 1, ms) <= 0 || read(0, &c, 1) != 1)
+		return -1;
+	return c;
+}
+
+/* parse a mouse report (ESC [ < b ; x ; y M) after ESC; return -1 if not one */
+static int term_mouse(void)
+{
+	int arg[3] = {0};
+	int i = 0;
+	int c;
+	char s[2] = "[";
+	if ((s[0] = c = term_readwait(10)) != '[' || (s[1] = c = term_readwait(10)) != '<') {
+		/* not a mouse report; return the bytes read for later */
+		term_push(s, (s[0] == '[') + (c >= 0));
+		return -1;
+	}
+	while ((c = term_readwait(10)) >= 0) {
+		if (isdigit(c))
+			arg[i] = arg[i] * 10 + c - '0';
+		else if (c == ';' && i < 2)
+			i++;
+		else
+			break;
+	}
+	if (c != 'M')		/* button release or malformed */
+		return 0;
+	if ((arg[0] & ~0x1c) == 64)	/* ignoring modifier bits */
+		return TK_WHEELUP;
+	if ((arg[0] & ~0x1c) == 65)
+		return TK_WHEELDN;
+	return 0;
+}
+
+/* read a key; may return TK_WHEELUP or TK_WHEELDN for mouse wheel events */
+int term_readmouse(void)
+{
+	int c, m, pos;
+	while (1) {
+		pos = icmd_pos;
+		c = term_readraw();
+		/* only check for mouse reports directly from the terminal */
+		if (c != TK_ESC || ibuf_pos < ibuf_cnt)
+			return c;
+		ibuf_pos = ibuf_cnt = 0;
+		if ((m = term_mouse()) < 0)
+			return c;
+		icmd_pos = pos;		/* mouse events are not recorded */
+		if (m > 0)
+			return m;
+	}
+}
+
+/* read a key, ignoring mouse events */
+int term_read(void)
+{
+	int c;
+	while ((c = term_readmouse()) == TK_WHEELUP || c == TK_WHEELDN)
+		;
+	return c;
 }

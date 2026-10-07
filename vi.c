@@ -227,10 +227,15 @@ static int vi_wmirror(void)
 
 static int vi_buf[128];
 static int vi_buflen;
+static int vi_mouse;		/* accept mouse events in the next vi_read() */
 
 static int vi_read(void)
 {
-	return vi_buflen ? vi_buf[--vi_buflen] : term_read();
+	int mouse = vi_mouse;
+	vi_mouse = 0;
+	if (vi_buflen)
+		return vi_buf[--vi_buflen];
+	return mouse ? term_readmouse() : term_read();
 }
 
 static void vi_back(int c)
@@ -1555,6 +1560,7 @@ static void vi(void)
 		int mv, n, ru;
 		term_cmd(&n);
 		vi_arg2 = 0;
+		vi_mouse = 1;	/* mouse events only at the start of commands */
 		vi_ybuf = vi_yankbuf();
 		vi_arg1 = vi_prefix();
 		if (!vi_ybuf)
@@ -1608,6 +1614,16 @@ static void vi(void)
 				break;
 			case TK_CTL('y'):
 				if (vi_scrollbackward(MAX(1, vi_arg1)))
+					break;
+				xoff = vi_col2off(xb, xrow, xcol);
+				break;
+			case TK_WHEELDN:
+				if (vi_scrollforward(3))
+					break;
+				xoff = vi_col2off(xb, xrow, xcol);
+				break;
+			case TK_WHEELUP:
+				if (vi_scrollbackward(3))
 					break;
 				xoff = vi_col2off(xb, xrow, xcol);
 				break;
